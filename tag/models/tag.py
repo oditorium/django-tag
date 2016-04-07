@@ -4,8 +4,8 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All Rights Reserved.
 Licensed under the MIT License <https://opensource.org/licenses/MIT>.
 """
-__version__ = "1.0"
-__version_dt__ = "2016-04-05"
+__version__ = "1.1"
+__version_dt__ = "2016-04-07"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MIT"
 
@@ -26,6 +26,21 @@ class TagBase(object):
     def parent(self):
         """the parent of the current tag (returns the object, not the tag )"""
         raise NotImplementedError()
+
+    @property
+    def children(self):
+        """the children of the current tag (returns the objects, not the tag strings)"""
+        raise NotImplementedError()
+
+    @property
+    def direct_children(self):
+        """the children of the current tag (returns the objects, not the tag strings)"""
+        raise NotImplementedError()
+
+    @property
+    def family(self):
+        """the children plus the tag itself (returns the objects, not the tag strings)"""
+        return self.children.union({self})
 
     def delete(self, *args, **kwargs):
         """delete that tag (and all below it)"""
@@ -118,7 +133,13 @@ class RootTag(TagBase):
         
     @property
     def depth(self):
-        return 0    
+        return 0 
+
+    @classmethod
+    def get(cls, tagstr):
+        if tagstr != "" and tagstr != None: raise NotImplementedError()
+        return cls()
+   
         
 
 
@@ -278,24 +299,43 @@ class TagMixin(models.Model):
     @property
     def tags(self):
         """
-        returns all tags from that specific record
+        returns all tags from that specific record (as set)
         """
-        return self._tag_references.all()
+        return {t for t in self._tag_references.all()}
+
+    @property
+    def tags_str(self):
+        """
+        returns all tags from that specific record (as string)
+        """
+        return " ".join([t.tag for t in self._tag_references.all()])
+        
 
     @classmethod
-    def tagged_as(cls, tag_or_tagstr, include_children=True):
+    def tagged_as(cls, tag_or_tagstr, include_children=True, as_queryset=True):
         """
         returns all records that are tagged with this tag (and possibly its children)
-        """
         
+        NOTES
+        - if `include_children` is true'ish, all records tagged with this tag or its children
+            are returned, otherwise only with this tag
+        - if `as_queryset` is true'ish, a queryset is returned that can be acted upon further
+            (eg by filtering); otherwise a set is returned
+        """
         tag = Tag.get(tag_or_tagstr)
-        attr = cls.__name__.lower()+"_set"
-        items = {i for i in getattr(tag, attr).all()}
-            # eg tag._dummy_set.all()
-        if not include_children: return items
-        for ctag in tag.children:
-            items = items.union( cls.tagged_as(ctag, include_children=True) )
-        return items
+        if include_children: tag = tag.family
+        else: tag = [tag]
+        qset = cls.objects.filter(_tag_references__in=tag)
+        if as_queryset: return qset
+        return {record for record in qset}
+
+        # attr = cls.__name__.lower()+"_set"
+        # items = {i for i in getattr(tag, attr).all()}
+        #     # eg tag._dummy_set.all()
+        # if not include_children: return items
+        # for ctag in tag.children:
+        #     items = items.union( cls.tagged_as(ctag, include_children=True) )
+        # return items
     
 
 #####################################################################################################
@@ -319,4 +359,3 @@ class _Dummy(TagMixin, models.Model):
    
     
 
-    
