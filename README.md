@@ -100,6 +100,8 @@ available to manipulate tagging
     MyTaggedClass.tagged_as('aaa:111', as_queryset=False)       # {rec1}
     MyTaggedClass.tagged_as('aaa', as_queryset=False)           # {rec1, rec2}
     MyTaggedClass.tagged_as('aaa', include_children=False)      # -empty queryset-
+    qs = MyTaggedClass.objects.all()
+    MyTaggedClass.tags_fromqs(qs)                               # ['aaa:111', 'aaa:222']
     rec1.tag_remove('tag1')
     rec1.tags                                                   # {aaa:111}
     
@@ -112,6 +114,8 @@ Contributions welcome. Send us a pull request!
 ## Change Log
 The idea is to use [semantic versioning](http://semver.org/), even though initially we might make some minor
 API changes without bumping the major version number. Be warned!
+
+- **v1.2** added `tags_fromqs` and associated tests
 
 - **v1.1** added `family` property for tags and cleaned up `TagBase` and `RootTag`; added `tags_str` property
 to `TagMixin` and modified `tagged_as` to use filters and to alternatively return a query set

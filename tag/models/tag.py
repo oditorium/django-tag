@@ -4,8 +4,8 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All Rights Reserved.
 Licensed under the MIT License <https://opensource.org/licenses/MIT>.
 """
-__version__ = "1.1"
-__version_dt__ = "2016-04-07"
+__version__ = "1.2"
+__version_dt__ = "2016-04-08"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MIT"
 
@@ -309,7 +309,22 @@ class TagMixin(models.Model):
         returns all tags from that specific record (as string)
         """
         return " ".join([t.tag for t in self._tag_references.all()])
-        
+    
+    @classmethod
+    def tags_fromqs(cls, self_queryset, as_queryset=False):
+        """
+        returns all tags that are in relation to self_queryset (return tags as flat list or queryset)
+
+        USAGE
+            qs = MyTaggedClass.objects.filter(...)
+            tags = MyTaggedClass.tags_fromqs(qs)                            # ['tag1', 'tag2', ...]
+            tags_qs = MyTaggedClass.tags_fromqs(qs, as_queryset=True )      # queryset
+        """
+        # http://stackoverflow.com/questions/4823601/get-all-related-many-to-many-objects-from-a-django-queryset
+        kwargs = {(cls.__name__+"__in").lower(): self_queryset}
+        tag_queryset = Tag.objects.filter(**kwargs).distinct()
+        if as_queryset: return tag_queryset
+        return [tag for tag in tag_queryset.values_list('_tag', flat=True)]    
 
     @classmethod
     def tagged_as(cls, tag_or_tagstr, include_children=True, as_queryset=True):

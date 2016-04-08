@@ -163,6 +163,14 @@ class TestTags(TestCase):
             Tag.get('aaa::bbb::cc'), 
             Tag.get('aaa::bbb::ccc')
         })
+        s.assertEqual( aaa.family, {
+            Tag.get('aaa'), 
+            Tag.get('aaa::b'), 
+            Tag.get('aaa::bb'), 
+            Tag.get('aaa::bbb'), 
+            Tag.get('aaa::bbb::cc'), 
+            Tag.get('aaa::bbb::ccc')
+        })
         
         aaa_bbb = Tag.get("aaa::bbb")
         s.assertEqual( aaa_bbb.depth, 2)
@@ -183,6 +191,7 @@ class TestTags(TestCase):
         s.assertEqual( aaa_bbb_ccc.parent.parent.parent.depth, 0)
         s.assertEqual( aaa_bbb_ccc.direct_children, set())
         s.assertEqual( aaa_bbb_ccc.children, set())
+        s.assertEqual( aaa_bbb_ccc.family, {aaa_bbb_ccc})
         
 
 class TestTagging(TestCase):
@@ -270,6 +279,7 @@ class TestTagging(TestCase):
         t1 = Tag.get('m2m_tag1')
         t2 = Tag.get('m2m_tag2')
         t3 = Tag.get('m2m_tag3')
+        t4 = Tag.get('m2m_tag4')
         
         d1 = _Dummy(title='d1')
         d1.tag_add(t1)
@@ -283,9 +293,11 @@ class TestTagging(TestCase):
         d2.save()
         s.assertEqual( len(d2.tags), 1)
 
-        s.assertEqual( len(_Dummy.tagged_as(t1, False)), 2)
-        s.assertEqual( len(_Dummy.tagged_as(t2, False)), 1)
-        s.assertEqual( len(_Dummy.tagged_as(t3, False)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(t1, False, False)), 2)
+        s.assertEqual( len(_Dummy.tagged_as(t2, False, False)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(t3, False, False)), 1)
+
+        s.assertEqual( set(_Dummy.tags_fromqs(_Dummy.objects.all())), {'m2m_tag1', 'm2m_tag2', 'm2m_tag3'} )
 
     def test_many_to_many_h(s):
         """testing presentations tagged, and tags per presentation (hierarchical tags)"""
@@ -309,16 +321,16 @@ class TestTagging(TestCase):
         daa.tag_add(aa)
 
         #print(_Dummy.tagged_as(x, True))
-        s.assertEqual( len(_Dummy.tagged_as(x, False)), 1)
-        s.assertEqual( len(_Dummy.tagged_as(x, True)), 3)
+        s.assertEqual( len(_Dummy.tagged_as(x, False, False)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(x, True, False)), 3)
         
         #print(_Dummy.tagged_as(a, True))
-        s.assertEqual( len(_Dummy.tagged_as(a, False)), 1)
-        s.assertEqual( len(_Dummy.tagged_as(a, True)), 2)
+        s.assertEqual( len(_Dummy.tagged_as(a, False, False)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(a, True, False)), 2)
         
         #print(_Dummy.tagged_as(aa, True))
-        s.assertEqual( len(_Dummy.tagged_as(aa, False)), 1)
-        s.assertEqual( len(_Dummy.tagged_as(aa, True)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(aa, False, False)), 1)
+        s.assertEqual( len(_Dummy.tagged_as(aa, True, False)), 1)
         
 
         
