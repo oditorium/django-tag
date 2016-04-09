@@ -4,7 +4,7 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All Rights Reserved.
 Licensed under the MIT License <https://opensource.org/licenses/MIT>.
 """
-__version__ = "1.2"
+__version__ = "1.2+"
 __version_dt__ = "2016-04-08"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MIT"
@@ -115,6 +115,9 @@ class TagBase(object):
     def __repr__(s):
         return "{1}.get('{0.tag}')".format(s, s.__class__.__name__)
 
+    def __str__(s):
+        return s.__repr__()
+
     
 #####################################################################################################
 ## ROOT BASE
@@ -139,6 +142,9 @@ class RootTag(TagBase):
     def get(cls, tagstr):
         if tagstr != "" and tagstr != None: raise NotImplementedError()
         return cls()
+
+    def __repr__(s):
+        return "RootTag()"
    
         
 
@@ -235,9 +241,16 @@ class Tag(TagBase, models.Model):
         newtag = cls(_tag=tagstr, _parent_tag=parent_tag)
         newtag.save()
         return newtag
+
+    def __repr__(s):
+        return "TAG('{0.tag}')".format(s, s.__class__.__name__)
     
 
-
+def TAG(tagstr):
+    """convenience method for Tag.get"""
+    return Tag.get(tagstr)
+    
+    
 #####################################################################################################
 ## TAG MIXIN
 class TagMixin(models.Model):
@@ -259,9 +272,9 @@ class TagMixin(models.Model):
         tc = MyTaggedClass()
         tc.tag_add('mytag1')
         tc.tag_add('mytag1')
-        tc.tags                                 # {Tag.get('mytag1'), Tag.get('mytag2')}
+        tc.tags                                 # {TAG('mytag1'), TAG('mytag2')}
         tc.tag_remove('mytag1')
-        tc.tags                                 # {Tag.get('mytag2')}
+        tc.tags                                 # {TAG('mytag2')}
         MyTaggedClass.tagged_as('mytag2')       # set(tc)
     
     *see <http://stackoverflow.com/questions/6014282/django-creating-a-mixin-for-reusable-model-fields>

@@ -331,7 +331,22 @@ class TestTagging(TestCase):
         #print(_Dummy.tagged_as(aa, True))
         s.assertEqual( len(_Dummy.tagged_as(aa, False, False)), 1)
         s.assertEqual( len(_Dummy.tagged_as(aa, True, False)), 1)
+
+
+    def test_repr(s):
+        """tests representation and TAG shortcut"""
+
+        tag = RootTag()
+        s.assertEqual( str(tag), "RootTag()")
         
+        tag = TAG("")
+        s.assertEqual( str(tag), "RootTag()")
+        
+        tag = TAG("single")
+        s.assertEqual( str(tag), "TAG('single')")
+        
+        tag = TAG("aaa::bbb")
+        s.assertEqual( str(tag), "TAG('aaa::bbb')")
 
         
 
