@@ -4,8 +4,8 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All rights reserved.
 Licensed under the Mozilla Public License, v. 2.0 <https://mozilla.org/MPL/2.0/>
 """
-__version__ = "1.2+"
-__version_dt__ = "2016-04-08"
+__version__ = "1.2.1"
+__version_dt__ = "2016-05-12"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MPL v2.0"
 
