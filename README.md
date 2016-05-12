@@ -115,6 +115,8 @@ Contributions welcome. Send us a pull request!
 The idea is to use [semantic versioning](http://semver.org/), even though initially we might make some minor
 API changes without bumping the major version number. Be warned!
 
+- to **v1.2.2** changed license to MPL v2.0; added convencience method; bugfix: allow empty tags and empty parents of tags
+
 - **v1.2** added `tags_fromqs` and associated tests
 
 - **v1.1** added `family` property for tags and cleaned up `TagBase` and `RootTag`; added `tags_str` property

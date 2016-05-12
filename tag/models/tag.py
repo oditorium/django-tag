@@ -4,7 +4,7 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All rights reserved.
 Licensed under the Mozilla Public License, v. 2.0 <https://mozilla.org/MPL/2.0/>
 """
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 __version_dt__ = "2016-05-12"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MPL v2.0"
@@ -179,7 +179,7 @@ class Tag(TagBase, models.Model):
     _tag = models.CharField(max_length=255, unique=True, blank=True, default="", null=False, db_index=True)
         # that's the actual tag, including (in case of a hierarchical tag) the tag separator
         
-    _parent_tag = models.ForeignKey('self', on_delete=models.CASCADE, null=True)
+    _parent_tag = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True)
         # the parent of the current tag, if any
 
     def __eq__(self, other):
@@ -202,7 +202,8 @@ class Tag(TagBase, models.Model):
         the parent of the current tag (returns the object, not the tag string)
         """
         parent = self._parent_tag
-        if parent == None: return RootTag()
+        if not parent: return RootTag()
+        #if parent == None: return RootTag()
         return parent
 
     @property
@@ -280,7 +281,7 @@ class TagMixin(models.Model):
     *see <http://stackoverflow.com/questions/6014282/django-creating-a-mixin-for-reusable-model-fields>
     """
 
-    _tag_references = models.ManyToManyField(Tag)
+    _tag_references = models.ManyToManyField(Tag, blank=True)
         # that's the key connection to the tags field
 
     class Meta:
