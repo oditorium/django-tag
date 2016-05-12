@@ -4,12 +4,13 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All rights reserved.
 Licensed under the Mozilla Public License, v. 2.0 <https://mozilla.org/MPL/2.0/>
 """
-__version__ = "1.2.2"
+__version__ = "1.3"
 __version_dt__ = "2016-05-12"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MPL v2.0"
 
 from django.db import models
+#from itertools import chain
 
 #####################################################################################################
 ## TAG BASE
@@ -28,39 +29,90 @@ class TagBase(object):
         raise NotImplementedError()
 
     @property
-    def children(self):
-        """the children of the current tag (returns the objects, not the tag strings)"""
+    def direct_children_g(self):
+        """the direct children of the current tag (returns generator of objects, not tag strings)"""
         raise NotImplementedError()
+
+    @property
+    def is_leaf(self):
+        """
+        a tag is a leaf iff it has no children
+        """
+        return len(tuple(self.direct_children_g)) == 0
 
     @property
     def direct_children(self):
-        """the children of the current tag (returns the objects, not the tag strings)"""
-        raise NotImplementedError()
+        """
+        the direct children of the current tag (returns the objects, not the tag strings)
+        """
+        return { t for t in self.direct_children_g }
+
+    @property
+    def children(self):
+        """
+        the children of the current tag (returns the objects, not the tag strings)
+        """
+        children = self.direct_children
+        for t in self.direct_children:
+            children = children.union(t.children)
+        return children
 
     @property
     def family(self):
-        """the children plus the tag itself (returns the objects, not the tag strings)"""
+        """
+        the children plus the tag itself (returns set of objects, not the tag strings)
+        """
         return self.children.union({self})
 
+    @property
+    def leaves(self):
+        """
+        all leaf-tags below self, as generator of objects
+        """
+        if self.is_leaf: return (self,)
+        else: return ( t1 for t2 in self.direct_children_g for t1 in t2.leaves )
+              #return tuple( t.leaves for t in self.direct_children_g )
+    
+    @classmethod
+    def all_leaves(cls, root_tags=None):
+        """
+        generator for all leaves below root_tags (or cls.root_tags() if None)
+        """
+        if root_tags == None: root_tags = cls.root_tags()
+        return ( t2 for t1 in root_tags for t2 in t1.leaves )
+        
+    @classmethod
+    def root_tags(cls):
+        """returns a generator of root tags (ie tags with no parent), ordered by id"""
+        raise NotImplementedError()
+    
     def delete(self, *args, **kwargs):
-        """delete that tag (and all below it)"""
+        """
+        delete that tag (and all below it)
+        """
         try: super().delete(*args, **kwargs)
         except: raise NotImplementedError()
 
     @classmethod
     def parent_tagstr(cls, tagstr):
-        """the tag string of the parent tag"""
+        """
+        the tag string of the parent tag
+        """
         try: return tagstr.rsplit(cls.hierarchy_separator, 1)[-2]
         except IndexError: return None
 
     @property
     def short_tag(self):
-        """the stub tag string of the child tag"""
+        """
+        the stub tag string of the child tag
+        """
         return self.tag.rsplit(self.hierarchy_separator, 1)[-1]
         
     @classmethod
     def get(cls, tagstr):
-        """gets the tag object corresponding to the tag string (possibly creating it and entire hierarchy)"""
+        """
+        gets the tag object corresponding to the tag string (possibly creating it and entire hierarchy)
+        """
         
         if tagstr==None: return None
             # play nicely with None tagstrings (they just result in a None tag)
@@ -87,13 +139,17 @@ class TagBase(object):
     
     @classmethod 
     def deltag(cls, tagstr):
-        """deletes the tag object corresponding to the tag string (possibly deleting the entire hierarchy below)"""
+        """
+        deletes the tag object corresponding to the tag string (possibly deleting the entire hierarchy below)
+        """
         tag = cls.get(tagstr)
         if tag != None: tag.delete()
         
     @classmethod
     def get_if_exists(cls, tagstr):
-        """gets the tag object corresponding to the tag string if it exists, None else"""
+        """
+        gets the tag object corresponding to the tag string if it exists, None else
+        """
         raise NotImplementedError() 
         
     @classmethod
@@ -103,7 +159,9 @@ class TagBase(object):
         
     @property   
     def depth(self):
-        """returns the depth of the current tag in the hierachy (root=0)"""
+        """
+        returns the depth of the current tag in the hierachy (root=0)
+        """
         parent = self.parent
         if  parent != None: return 1 + parent.depth
         return 1
@@ -201,28 +259,22 @@ class Tag(TagBase, models.Model):
         """
         the parent of the current tag (returns the object, not the tag string)
         """
-        parent = self._parent_tag
-        if not parent: return RootTag()
-        #if parent == None: return RootTag()
-        return parent
+        if not self._parent_tag: return RootTag()
+        return self._parent_tag
 
     @property
-    def direct_children(self):
+    def direct_children_g(self):
         """
-        the direct children of the current tag (returns the objects, not the tag strings)
+        the direct children of the current tag (returns generator of objects, not tag strings)
         """
-        return { t for t in self.__class__.objects.filter(_parent_tag=self)}
+        return ( t for t in self.__class__.objects.filter(_parent_tag=self) )
 
-    @property
-    def children(self):
+    @classmethod
+    def root_tags(cls):
         """
-        the children of the current tag (returns the objects, not the tag strings)
+        returns a generator of root tags (ie tags with no parent), ordered by id
         """
-        children = self.direct_children
-        for t in self.direct_children:
-            children = children.union(t.children)
-        return children
-
+        return (t for t in cls.objects.filter(_parent_tag=None).order_by('id'))
 
     @classmethod
     def get_if_exists(cls, tagstr):
@@ -315,14 +367,21 @@ class TagMixin(models.Model):
         """
         returns all tags from that specific record (as set)
         """
-        return {t for t in self._tag_references.all()}
+        return {t for t in self.tags_qs}
 
     @property
     def tags_str(self):
         """
         returns all tags from that specific record (as string)
         """
-        return " ".join([t.tag for t in self._tag_references.all()])
+        return " ".join([t.tag for t in self.tags_qs])
+
+    @property
+    def tags_qs(self):
+        """
+        returns all tags from that specific record (as queryset)
+        """
+        return self._tag_references.all()
     
     @classmethod
     def tags_fromqs(cls, self_queryset, as_queryset=False):
