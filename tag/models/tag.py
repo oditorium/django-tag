@@ -4,13 +4,20 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All rights reserved.
 Licensed under the Mozilla Public License, v. 2.0 <https://mozilla.org/MPL/2.0/>
 """
-__version__ = "1.3"
-__version_dt__ = "2016-05-12"
+__version__ = "1.4"
+__version_dt__ = "2016-05-13"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MPL v2.0"
 
 from django.db import models
+from django.core.signing import Signer, BadSignature
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+
+import json
+
 #from itertools import chain
+
 
 #####################################################################################################
 ## TAG BASE
@@ -306,6 +313,115 @@ def TAG(tagstr):
     
 #####################################################################################################
 ## TAG MIXIN
+
+#############################################################
+## ERROR / SUCCESS
+def _error(msg, status=None):
+    if status == None: status = 404
+    return JsonResponse({'success': False, 'errmsg': msg}, status=status)
+
+def _success(data, status=None):
+    if status == None: status = 200
+    return JsonResponse({'data': data, 'success': True}, status=status)
+
+#############################################################
+## EXCEPTIONS
+class TokenSignatureError(RuntimeError): pass       # the token signature is invalid
+class TokenFormatError(RuntimeError): pass          # the token format is invalid
+class IllegalCommandError(RuntimeError): pass       # that command is not valid
+class ItemDoesNotExistError(RuntimeError): pass     # the item does not exist
+class TagDoesNotExistError(RuntimeError): pass      # the tag does not exist
+class TokenContentError(RuntimeError): pass         # the token content is invalid
+class TokenDefinitionError(RuntimeError): pass      # bad parameters when defining a token
+
+
+#############################################################
+## TOKEN
+class Token():
+    """
+    allows definition tokens for the tag API
+    """
+    def __init__(s, token):
+        try: token = Signer(sep=s.separators, salt=s.salt).unsign(token)
+        except BadSignature: raise TokenSignatureError(token)
+        s.token = token.split(s.separator)
+        if len(s.token) != 4: raise TokenFormatError("Invalid token format [1]")
+    
+    separators=":::"
+    separator="::"
+    separator2=":"
+    salt="token"
+    
+    @classmethod
+    def create(cls, namespace, command, tag_id=None, item_id=None):
+        """
+        create a token
+        
+        PARAMETERS
+        - namespace: the token namespace (string, minimum 2 characters)
+        - command: the token command (can be a string, or a list of strings if it uses parameters)
+        - tag_id: the tag id (if any) this command relates to
+        - item_id: the item id (if any) this command relates to
+        """
+        if len(namespace) < 2: raise TokenDefinitionError("namespace minimum 2 characters")
+        if not isinstance(command, str): command = cls.separator2.join(command)
+        token = cls.separator.join([namespace, command, str(tag_id), str(item_id)])
+        return Signer(sep=cls.separators, salt=cls.salt).sign(token)
+
+    @property
+    def namespace(s):
+        """
+        the token namespace
+        """
+        return s.token[0]
+        
+    @property
+    def command(s):
+        """
+        the token command (without paramters)
+        """
+        return s.token[1].split(s.separator2)[0]
+        
+    @property
+    def parameters(s):
+        """
+        the token command parameters (as list)
+        """
+        return s.token[1].split(s.separator2)[1:]
+        
+    @property
+    def numparameters(s):
+        """
+        the number of token parameters
+        """ 
+        return len(s.parameters)
+
+    @property
+    def tag_id(s):
+        """
+        the (numeric) tag id, or None
+        """ 
+        value = s.token[2]
+        if value == "None": return None
+        return int(value)
+        
+    @property
+    def item_id(s):
+        """
+        the (numeric) item id, or None
+        """ 
+        value = s.token[3]
+        if value == "None": return None
+        return int(value)
+
+    def __str__(s):
+        return "Token({})"
+
+
+
+
+#############################################################
+## TAG MIXIN
 class TagMixin(models.Model):
     """
     a mixin for Django models, linking them to the Tag model
@@ -361,6 +477,12 @@ class TagMixin(models.Model):
         removes a tag from a specific record
         """
         self._tag_references.remove( Tag.get(tag_or_tagstr) )
+
+    def tag_toggle(self, tag_or_tagstr):
+        """
+        toggles a tag on a specific record
+        """
+        raise NotImplementedError('tag_toggle')
 
     @property
     def tags(self):
@@ -424,6 +546,185 @@ class TagMixin(models.Model):
         # for ctag in tag.children:
         #     items = items.union( cls.tagged_as(ctag, include_children=True) )
         # return items
+
+    ########################################
+    ## TAG TOKEN XXX
+    @classmethod
+    def tag_token(cls, command, tag_or_tag_id=None, item_or_item_id=None):
+        """
+        generic token generation
+
+        command: one of 'add', 'remove', 'toggle'
+        tag_id,item_id: identifying the tag and item respectively
+        """
+        if not command in ['add', 'remove', 'toggle']: raise IllegalCommandError(command)
+        if not isinstance(item_or_item_id, int): item_or_item_id = item_or_item_id.id
+        if not isinstance(tag_or_tag_id, int): tag_or_tag_id = tag_or_tag_id.id
+        return Token.create(cls.__name__, command, tag_or_tag_id, item_or_item_id)
+
+    def tag_token_add(s, tag_or_tag_id):
+        """
+        creates a token to allow adding a tag
+        """
+        return s.tag_token("add", tag_or_tag_id, s.id)
+
+    def tag_token_remove(s, tag_or_tag_id):
+        """
+        creates a token to allow adding a tag
+        """
+        return s.tag_token("remove", tag_or_tag_id, s.id)
+
+    def tag_token_toggle(s, tag_or_tag_id):
+        """
+        creates a token to allow adding a tag
+        """
+        return s.tag_token("toggle", tag_or_tag_id, s.id)
+
+    def tag_token_all(s, tag_or_tag_id):
+        """
+        return a dict of all tokens for this tag, item
+        """
+        return {
+            'tag':      tag_or_tag_id,
+            'add':      s.tag_token_add(tag_or_tag_id),
+            'remove':   s.tag_token_remove(tag_or_tag_id),
+            'toggle':   s.tag_token_toggle(tag_or_tag_id),
+        }
+
+    @property
+    def tags_token_all(s):
+        """
+        returns a list of dicts for all tags, and all tokens for each of those tags, for this item
+        
+        NOTES
+        - all tags being defined as all Tag.all_leaves
+        - the dicts are those created by `tag_token_all`
+        """
+        return [ s.tag_token_all(t) for t in Tag.all_leaves()]
+        
+
+    ########################################
+    ## TAG TOKEN EXECUTE
+    @classmethod
+    def tag_token_execute(cls, token, params=None):
+        """
+        execute a token command
+
+        NOTES
+        - `token` is the relevant token
+        - `params` are the parameters 
+        ##(can be bytes; if string assumes it is json encoded)
+        """
+        t = Token(token)
+        if t.namespace != cls.__name__: 
+            raise TokenContentError("using {} token for a {} object".format(t.namespace, cls.__name__))
+        #if isinstance(params, bytes): params = params.decode()
+        #if isinstance(params, str): 
+        #    try: params = json.loads(params)
+        #    except: raise ParamsError(params) 
+
+        
+        
+
+        try: item = cls.objects.get(id=t.item_id)
+        except: raise ItemDoesNotExistError(t.item_id)
+        
+        try: tag = Tag.objects.get(id=t.tag_id)
+        except: raise TagDoesNotExistError(t.tag_id)
+        
+        # add/remove/toggle
+        if    t.command == "add":     item.tag_add(tag)
+        elif  t.command == "remove":  item.tag_remove(tag)
+        elif  t.command == "toggle":  item.tag_toggle(tag)
+
+        # error
+        else:
+            raise IllegalCommandError(t.command)
+
+
+
+    ########################################
+    ## TAG AS VIEW
+    @classmethod
+    def tag_as_view(cls):
+        """
+        returns a API view function that can be used directly in an `urls.py` file
+
+        NOTE:
+        - the view function expects POST for all requests, even those that are only reading data
+        - the data has to be transmitted in json, not URL encoded
+        - the response is json; fields are a `success` field (true or false), and an `errmsg` 
+            field in case of non success
+
+        PARAMETERS:
+        - token: the API token thatdetermines the request
+
+
+        USAGE
+        In the `urls.py` file:
+
+            urlpatterns += [
+                url(r'^api/somemodel$', SomeModel.tag_as_view(), name="api_somemodel_tag"),
+            ]
+
+        In the `models.py` file:
+
+            class SomeModel(TagMixin, models.Model):
+                ...
+
+        In the `views.py` file:
+            context['item'] = SomeModel.objects.get(id=...)
+            ...
+
+        In the `template.html` file:
+
+            <ul class='taglist'>
+            {% for t in item.tags_token_all %}
+            <li>
+            {{t.tag.tag}}
+            <span class='active active-tag active-tag-add' data-tag-token='{{t.add}}'>add</span>    
+            <span class='active active-tag active-tag-remove' data-tag-token='{{t.remove}}'>remove</span>   
+            </li>
+            {% endfor %}
+            </ul>
+            
+            <script>
+            $('.active-tag').on('click', function(e){
+                var target = $(e.target)
+                var token = target.data('tag-token')
+                var data = JSON.stringify({token: token, params: {}})
+                $.post("{% url 'api_somemodel_tag'%}", data).done(function(){...})
+            })
+            </script>
+
+
+        """
+        @csrf_exempt
+        def view(request):
+    
+            if request.method != "POST": return _error("request must be POST")
+            
+            try: data = json.loads(request.body.decode())
+            except: 
+                raise
+                return _error('could not json-decode request body [{}]'.format(request.body.decode()))
+
+            try: token = data['token']
+            except: return _error('missing token')
+
+            params = data['params'] if 'params' in data else None
+
+            try: result = cls.tag_token_execute(token, params)
+            except TokenSignatureError as e: return _error('token signature error [{}]'.format(str(e)))
+            except TokenFormatError as e: return _error('token format error [{}]'.format(str(e)))
+            #except ParamsError as e: return _error('parameter error [{}]'.format(str(e)))
+            except ItemDoesNotExistError as e: return _error('item does not exist [{}]'.format(str(e)))
+            except TagDoesNotExistError as e: return _error('tag does not exist [{}]'.format(str(e)))
+            except Exception as e: return _error('error executing token [{}::{}]'.format(type(e), str(e)))
+
+            return _success(result)
+
+        return view
     
 
 #####################################################################################################
@@ -438,6 +739,63 @@ class _Dummy(TagMixin, models.Model):
 
     def __repr__(self):
         return "{1}(title='{0.title}')".format(self, self.__class__.__name__)
+
+
+# THIS CODE SHOULD BE CONVERTED INTO UNIT TESTS
+# TODO
+# 
+# from issuetracker.models import Tag
+# from issuetracker.models.tag import Token
+# Token.create('myns', 'mycmd')
+# s=Token.create('myns', 'mycmd',1,100)
+# s
+# t=Token(s)
+# t.namespace
+# t.command
+# t.tag_id
+# t.item_id
+# 
+# s='myns::mycmd::1::100:::b9A_IT7PYroZXeBld1s0mqliyZY'
+# t=Token(s)
+# 
+# 
+# from issuetracker.models import Issue
+# 
+# Issue.tag_token("add", 1, 100)
+# Issue.tag_token("remove", 1, 100)
+# Issue.tag_token("toggle", 1, 100)
+# 
+# i=Issue.objects.all()[0]
+# i.tag_token_add(123)
+# i.tag_token_remove(123)
+# i.tag_token_toggle(123)
+# 
+# from issuetracker.models import Issue
+# from issuetracker.models import Tag
+# i=Issue.objects.all()[0]
+# s = i.tag_token_add(123)
+# s
+# Issue.tag_token_execute(s)
+# 
+# tag = Tag.objects.all()[0]
+# tag
+# s = i.tag_token_add(tag)
+# s
+# i.tags
+# s = i.tag_token_add(tag)
+# Issue.tag_token_execute(s)
+# i.tags
+# s = i.tag_token_remove(tag)
+# Issue.tag_token_execute(s)
+# i.tags
+# s = i.tag_token_toggle(tag)
+# Issue.tag_token_execute(s)
+# i.tags
+# 
+# i.tag_token_all(tag)
+# 
+# i.tags_token_all
+
 
 
         

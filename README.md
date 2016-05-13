@@ -105,7 +105,45 @@ available to manipulate tagging
     rec1.tag_remove('tag1')
     rec1.tags                                                   # {aaa:111}
     
- 
+This model class can then also be directly connected to a view that allows changing those tags 
+
+In the `urls.py` file:
+
+    urlpatterns += [
+        url(r'^api/somemodel$', SomeModel.tag_as_view(), name="api_somemodel_tag"),
+    ]
+
+In the `models.py` file:
+
+    class SomeModel(TagMixin, models.Model):
+        ...
+
+In the `views.py` file:
+    context['item'] = SomeModel.objects.get(id=...)
+    ...
+
+In the `template.html` file:
+
+    <ul class='taglist'>
+    {% for t in item.tags_token_all %}
+    <li>
+    {{t.tag.tag}}
+    <span class='active active-tag active-tag-add' data-tag-token='{{t.add}}'>add</span>    
+    <span class='active active-tag active-tag-remove' data-tag-token='{{t.remove}}'>remove</span>   
+    </li>
+    {% endfor %}
+    </ul>
+    
+    <script>
+    $('.active-tag').on('click', function(e){
+        var target = $(e.target)
+        var token = target.data('tag-token')
+        var data = JSON.stringify({token: token, params: {}})
+        $.post("{% url 'api_somemodel_tag'%}", data).done(function(){...})
+    })
+    </script>
+
+
 ## Contributions
 
 Contributions welcome. Send us a pull request!
@@ -114,6 +152,8 @@ Contributions welcome. Send us a pull request!
 ## Change Log
 The idea is to use [semantic versioning](http://semver.org/), even though initially we might make some minor
 API changes without bumping the major version number. Be warned!
+
+- **v1.4** added `tag_as_view` as well as the related token generation and execution functions
 
 - **v1.3** some restructuring; added a number of new properties and methods (eg `leaves`, `root_tags, ...); now preferring generators over lists/tuples; `changed license to MPL v2.0; bugfix: allow empty tags and empty parents of tags
 
