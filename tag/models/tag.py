@@ -4,7 +4,7 @@ a generic tag model for Django
 Copyright (c) Stefan LOESCH, oditorium 2016. All rights reserved.
 Licensed under the Mozilla Public License, v. 2.0 <https://mozilla.org/MPL/2.0/>
 """
-__version__ = "1.4"
+__version__ = "1.5"
 __version_dt__ = "2016-05-13"
 __copyright__ = "Stefan LOESCH, oditorium 2016"
 __license__ = "MPL v2.0"
@@ -316,13 +316,13 @@ def TAG(tagstr):
 
 #############################################################
 ## ERROR / SUCCESS
-def _error(msg, status=None):
+def _error(msg, reference=None, status=None):
     if status == None: status = 404
-    return JsonResponse({'success': False, 'errmsg': msg}, status=status)
+    return JsonResponse({'success': False, 'errmsg': msg, 'data': {}, 'reference': reference}, status=status)
 
-def _success(data, status=None):
+def _success(data, reference=None, status=None):
     if status == None: status = 200
-    return JsonResponse({'data': data, 'success': True}, status=status)
+    return JsonResponse({'data': data, 'success': True, 'reference': reference}, status=status)
 
 #############################################################
 ## EXCEPTIONS
@@ -462,6 +462,9 @@ class TagMixin(models.Model):
 
     @staticmethod
     def tag(tagstr):
+        """
+        convenience method to get a tag object from a tagstr
+        """
         return Tag.get(tagstr)
 
     def tag_add(self, tag_or_tagstr):
@@ -504,6 +507,13 @@ class TagMixin(models.Model):
         returns all tags from that specific record (as queryset)
         """
         return self._tag_references.all()
+
+    def has_tag(self, tag_or_tagstr):
+        """
+        whether this item has that particular tag
+        """
+        tag = Tag.get(tag_or_tagstr)
+        return tag in self.tags_qs
     
     @classmethod
     def tags_fromqs(cls, self_queryset, as_queryset=False):
@@ -538,14 +548,6 @@ class TagMixin(models.Model):
         qset = cls.objects.filter(_tag_references__in=tag)
         if as_queryset: return qset
         return {record for record in qset}
-
-        # attr = cls.__name__.lower()+"_set"
-        # items = {i for i in getattr(tag, attr).all()}
-        #     # eg tag._dummy_set.all()
-        # if not include_children: return items
-        # for ctag in tag.children:
-        #     items = items.union( cls.tagged_as(ctag, include_children=True) )
-        # return items
 
     ########################################
     ## TAG TOKEN XXX
@@ -618,19 +620,14 @@ class TagMixin(models.Model):
         t = Token(token)
         if t.namespace != cls.__name__: 
             raise TokenContentError("using {} token for a {} object".format(t.namespace, cls.__name__))
-        #if isinstance(params, bytes): params = params.decode()
-        #if isinstance(params, str): 
-        #    try: params = json.loads(params)
-        #    except: raise ParamsError(params) 
-
-        
-        
 
         try: item = cls.objects.get(id=t.item_id)
         except: raise ItemDoesNotExistError(t.item_id)
         
         try: tag = Tag.objects.get(id=t.tag_id)
         except: raise TagDoesNotExistError(t.tag_id)
+        
+        result = {'item_id': t.item_id, 'tag_id': t.tag_id, 'tag': tag.tag, 'short_tag': tag.short_tag}
         
         # add/remove/toggle
         if    t.command == "add":     item.tag_add(tag)
@@ -641,7 +638,8 @@ class TagMixin(models.Model):
         else:
             raise IllegalCommandError(t.command)
 
-
+        result['item_has_tag'] = item.has_tag(tag)
+        return result
 
     ########################################
     ## TAG AS VIEW
@@ -652,13 +650,26 @@ class TagMixin(models.Model):
 
         NOTE:
         - the view function expects POST for all requests, even those that are only reading data
-        - the data has to be transmitted in json, not URL encoded
-        - the response is json; fields are a `success` field (true or false), and an `errmsg` 
-            field in case of non success
+
+        - the data has to be transmitted in json, not URL encoded; fields:
+            - `token`: the API token that determines the request
+            - `parameters`: additional parameters (currently ignored)
+            - `reference`: frontend reference data, returned unchanged*
+            
+        - the response is json; fields:
+            - `success`: true or false
+            - `errmsg`: long error message** 
+            - `reference`: the reference data originally submitted*
+            - `data.tag_id`: the ID of the relevant tag**
+            - `data.tag`: the full name of the relevant tag**
+            - `data.short_tag`: the short tag**
+            - `data.item_id`: the ID of the relevant item**
+            - `data.item_has_tag`: true or false**
+
+        * allows for the JavaScript to more easily interpret the response
+        ** presence depends on the value of `success`
 
         PARAMETERS:
-        - token: the API token thatdetermines the request
-
 
         USAGE
         In the `urls.py` file:
@@ -673,27 +684,28 @@ class TagMixin(models.Model):
                 ...
 
         In the `views.py` file:
+
             context['item'] = SomeModel.objects.get(id=...)
             ...
 
         In the `template.html` file:
 
             <ul class='taglist'>
-            {% for t in item.tags_token_all %}
-            <li>
-            {{t.tag.tag}}
-            <span class='active active-tag active-tag-add' data-tag-token='{{t.add}}'>add</span>    
-            <span class='active active-tag active-tag-remove' data-tag-token='{{t.remove}}'>remove</span>   
-            </li>
-            {% endfor %}
+                {% for t in item.tags_token_all %}
+                    <li>
+                        {{t.tag.tag}}
+                        <span class='active-tag' data-token='{{t.add}}' data-msg='added tag {{t.tag.tag}}'>add</span>    
+                    </li>
+                {% endfor %}
             </ul>
             
             <script>
             $('.active-tag').on('click', function(e){
                 var target = $(e.target)
-                var token = target.data('tag-token')
-                var data = JSON.stringify({token: token, params: {}})
-                $.post("{% url 'api_somemodel_tag'%}", data).done(function(){...})
+                var token = target.data('token')
+                var msg = target.data('msg')
+                var data = JSON.stringify({token: token, params: {}, reference: {msg: msg}})
+                $.post("{% url 'api_somemodel_tag'%}", data).done(function(r){console.log(r.reference.msg)})
             })
             </script>
 
@@ -713,16 +725,19 @@ class TagMixin(models.Model):
             except: return _error('missing token')
 
             params = data['params'] if 'params' in data else None
-
+            reference = data['reference'] if 'reference' in data else None
+            
             try: result = cls.tag_token_execute(token, params)
-            except TokenSignatureError as e: return _error('token signature error [{}]'.format(str(e)))
-            except TokenFormatError as e: return _error('token format error [{}]'.format(str(e)))
-            #except ParamsError as e: return _error('parameter error [{}]'.format(str(e)))
-            except ItemDoesNotExistError as e: return _error('item does not exist [{}]'.format(str(e)))
-            except TagDoesNotExistError as e: return _error('tag does not exist [{}]'.format(str(e)))
-            except Exception as e: return _error('error executing token [{}::{}]'.format(type(e), str(e)))
+            except TokenSignatureError as e: return _error('token signature error [{}]'.format(str(e)), reference)
+            except TokenFormatError as e: return _error('token format error [{}]'.format(str(e)), reference)
+            #except ParamsError as e: return _error('parameter error [{}]'.format(str(e)), reference)
+            except ItemDoesNotExistError as e: return _error('item does not exist [{}]'.format(str(e)), reference)
+            except TagDoesNotExistError as e: return _error('tag does not exist [{}]'.format(str(e)), reference)
+            except Exception as e: 
+                #raise
+                return _error('error executing token [{}::{}]'.format(type(e), str(e)), reference)
 
-            return _success(result)
+            return _success(result, reference)
 
         return view
     
@@ -795,6 +810,12 @@ class _Dummy(TagMixin, models.Model):
 # i.tag_token_all(tag)
 # 
 # i.tags_token_all
+# 
+# from issuetracker.models import Issue
+# from issuetracker.models import Tag
+# i=Issue.objects.all()[0]
+# t=Tag.objects.all()[0]
+# i.has_tag(t)
 
 
 

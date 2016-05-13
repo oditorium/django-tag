@@ -78,6 +78,8 @@ Note that deleting a parent tag deletes all children (except for the root tag)
 
 ## Using `TagMixin`
 
+### In Django
+
 The `TagMixin` class allows to tag record of Django models with `Tag` class defined above, being mindful
 of the hierarchy of those tags (ie, a record tagged `aaa:bbb` will be considered being tagged `aaa` as well
 as `aaa:bbb`). Under the hood this works using a many-to-many field called `_tag_references`, but this
@@ -104,7 +106,10 @@ available to manipulate tagging
     MyTaggedClass.tags_fromqs(qs)                               # ['aaa:111', 'aaa:222']
     rec1.tag_remove('tag1')
     rec1.tags                                                   # {aaa:111}
-    
+
+
+### Via the API
+
 This model class can then also be directly connected to a view that allows changing those tags 
 
 In the `urls.py` file:
@@ -143,6 +148,25 @@ In the `template.html` file:
     })
     </script>
 
+    <ul class='taglist'>
+        {% for t in item.tags_token_all %}
+        <li>
+            {{t.tag.tag}}
+            <span class='active-tag' data-token='{{t.add}}' data-msg='added tag {{t.tag.tag}}'>add</span>    
+        </li>
+        {% endfor %}
+    </ul>
+    
+    <script>
+    $('.active-tag').on('click', function(e){
+        var target = $(e.target)
+        var token = target.data('token')
+        var msg = target.data('msg')
+        var data = JSON.stringify({token: token, params: {}, reference: {msg: msg}})
+        $.post("{% url 'api_somemodel_tag'%}", data).done(function(r){console.log(r.reference.msg)})
+    })
+    </script>
+
 
 ## Contributions
 
@@ -152,6 +176,8 @@ Contributions welcome. Send us a pull request!
 ## Change Log
 The idea is to use [semantic versioning](http://semver.org/), even though initially we might make some minor
 API changes without bumping the major version number. Be warned!
+
+- **v1.5** added `has_tag`, and returning more data when the API is called
 
 - **v1.4** added `tag_as_view` as well as the related token generation and execution functions
 
